@@ -2,11 +2,27 @@ import random
 import time
 import aiohttp
 import asyncio
-from utils import make_request, handle_error,insert_after
+from utils import make_request, handle_error, insert_after, load_config
 from telegram_handler import TelegramHandler
 from loguru import logger
 from colorama import init, Fore, Style
 from cmd import print_s
+
+# Load configurations from the .conf file
+config = load_config()
+
+# Extract log settings from the configuration
+TAP_COUNT = config.getint("bot", "tap_count") if config.get("bot", "tap_count") != '' else 0
+RANDOM_TAP_COUNT = config.get("bot", "random_tap_count") if config.get("bot", "random_tap_count") != '' else 0
+SLEEP_PER_TAP = config.getint("bot", "sleep_per_tap") if config.get("bot", "sleep_per_tap") != '' else 0
+RANDOM_SLEEP_PER_TAP = config.get("bot", "random_sleep_per_tap") if config.get("bot", "random_sleep_per_tap") != '' else 0
+MIN_SAVE_ENERGY = config.getint("bot", "min_save_energy") if config.get("bot", "min_save_energy") != '' else 0
+MIN_SAVE_BALANCE = config.getint("bot", "min_save_balance") if config.get("bot", "min_save_balance") != '' else 0
+USE_AUTO_UPGRADES = config.getboolean("bot", "use_auto_upgrades") if config.get("bot", "use_auto_upgrades") != '' else True
+MAX_UPGRADE_LVL = config.getint("bot", "max_upgrade_lvl") if config.get("bot", "max_upgrade_lvl") != '' else 0
+MAX_UPGRADE_COST = config.getint("bot", "max_upgrade_cost") if config.get("bot", "max_upgrade_cost") != '' else 0
+MIN_UPGRADE_PROFIT = config.getint("bot", "min_upgrade_profit") if config.get("bot", "min_upgrade_profit") != '' else 0
+USE_DAILY_ENERGY = config.getboolean("bot", "use_daily_energy") if config.get("bot", "use_daily_energy") != '' else True
 
 class FarmBot:
     def __init__(self, client, platform):

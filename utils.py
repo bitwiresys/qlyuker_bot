@@ -9,6 +9,12 @@ def load_config(config_file=".conf"):
     config.read(config_file)
     return config
 
+def load_version(version_file=".ver"):
+    """Loads version from the specified .ver file."""
+    version = configparser.ConfigParser()
+    version.read(version_file)
+    return version
+
 def insert_after(d, key, new_key, new_value):
     """Helper function to insert new key-value pair after a specific key."""
     items = list(d.items())

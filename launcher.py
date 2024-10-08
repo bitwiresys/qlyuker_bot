@@ -4,7 +4,7 @@ import asyncio
 import glob
 import threading
 import random
-from utils import load_config
+from utils import load_config, load_version
 from colorama import init, Fore, Style
 from loguru import logger
 from pyrogram import Client
@@ -14,8 +14,14 @@ from cmd import print_s
 # Initialize colorama for colored console output
 init()
 
+# Load version from the .ver file
+ver = load_version()
+
 # Load configurations from the .conf file
 config = load_config()
+
+# Extract version
+VER = ver.get("version", "v")
 
 # Extract log settings from the configuration
 LOG_FILE = config.get("settings", "log_file")
@@ -45,7 +51,7 @@ def dun_title():
     while True:
         for x in ["\\", "∣", "/", "–"]:
             time.sleep(0.2)
-            os.system(f"title qlyuker_bot {x} v0.4b {x} *git_link*")
+            os.system(f"title qlyuker_bot {x} v{VER} {x} github.com/bitwiresys/qlyuker_bot")
 def display_banner():
     """Display the banner with a small delay for each line for effect."""
     threading.Thread(target=dun_title, args=()).start()
