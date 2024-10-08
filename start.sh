@@ -1,0 +1,7 @@
+#!/bin/bash
+
+source venv/bin/activate
+
+python main.py
+
+read -n 1 -s
