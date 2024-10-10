@@ -9,7 +9,6 @@ from colorama import init, Fore, Style
 from loguru import logger
 from pyrogram import Client
 from core import FarmBot
-from cmd import print_s
 
 # Initialize colorama for colored console output
 init()
@@ -56,9 +55,9 @@ def display_banner():
     """Display the banner with a small delay for each line for effect."""
     threading.Thread(target=dun_title, args=()).start()
     for line in BANNER.split("\n"):
-        print_s(Style.DIM + Fore.MAGENTA + line + Style.RESET_ALL)
+        print(Style.DIM + Fore.MAGENTA + line + Style.RESET_ALL)
         time.sleep(0.2)
-    print_s(
+    print(
         f"    {Style.DIM}{Fore.BLUE}Made by bitwiresys for public use. "
         f"If you purchase this, you have been scammed.{Style.RESET_ALL}\n"
     )
@@ -96,10 +95,10 @@ async def launch_process():
 
     if not session_names:
         logger.error("No sessions found!")
-        print_s(f"{Fore.RED}No sessions found!{Style.RESET_ALL}")
+        print(f"{Fore.RED}No sessions found!{Style.RESET_ALL}")
         return
 
-    print_s(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] {Fore.GREEN}Starting farm process for {len(session_names)} sessions...{Style.RESET_ALL}")
+    print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] {Fore.GREEN}Starting farm process for {len(session_names)} sessions...{Style.RESET_ALL}")
 
     # Run the farming process for all available sessions asynchronously
     await asyncio.gather(*[start_farm_process(session_name) for session_name in session_names])

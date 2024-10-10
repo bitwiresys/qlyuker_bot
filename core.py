@@ -6,7 +6,6 @@ from utils import make_request, handle_error, insert_after, load_config
 from telegram_handler import TelegramHandler
 from loguru import logger
 from colorama import init, Fore, Style
-from cmd import print_s
 
 # Load configurations from the .conf file
 config = load_config()
@@ -30,6 +29,8 @@ class FarmBot:
         self.platform = platform
         self.headers = self.gen_headers(self.platform)
 
+    def gen_energy_line(self,current,max,min_percent,max_percent):
+        return f"[{Fore.RED if current<=max*min_percent/100 else Fore.GREEN if current>=max*max_percent/100 else Fore.YELLOW }{current}{Style.RESET_ALL}/{Fore.YELLOW}{max}{Style.RESET_ALL}]"
     def gen_headers(self, platform):
         """Generates HTTP headers based on the platform."""
         ua = {
@@ -117,41 +118,61 @@ class FarmBot:
     async def farming(self):
         """Main farming loop."""
         session_name = self.client.name
-        try:
-            async with aiohttp.ClientSession(headers=self.headers) as session:
-                tg_handler = TelegramHandler(self.client, session_name, self.platform)
-                tg_web_data, query_id = await tg_handler.get_tg_web_data()
+        start_sleep = random.randint(3,12)
+        print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW} [{session_name}] {Style.RESET_ALL} | Random sleep {start_sleep} second.")
+        await asyncio.sleep(start_sleep)
+        while True:
+            try:
+                async with aiohttp.ClientSession(headers=self.headers) as session:
+                    tg_handler = TelegramHandler(self.client, session_name, self.platform)
+                    tg_web_data, query_id = await tg_handler.get_tg_web_data()
 
-                auth_data = await self.login(query_id, session)
-                if not auth_data:
-                    logger.error(f"Authorization error for {session_name}")
-                    return
+                    auth_data = await self.login(query_id, session)
+                    if not auth_data:
+                        logger.error(f"Authorization error for {session_name}")
+                        break
+                    mined = int(auth_data["mined"])
+                    dailyReward = auth_data['user']['dailyReward']
+                    totalCoins = int(auth_data["user"]["totalCoins"])
+                    currentCoins = int(auth_data["user"]["currentCoins"])
+                    currentEnergy = int(auth_data["user"]["currentEnergy"])
+                    minePerHour = int(auth_data["user"]["minePerHour"])
+                    uid = auth_data["user"]['uid']
+                    maxEnergy = int(auth_data["user"]["maxEnergy"])
+                    coinsPerTap = int(auth_data["user"]["coinsPerTap"])
+                    energyPerSec = int(auth_data["user"]["energyPerSec"])
 
-                current_energy = auth_data["user"]["currentEnergy"]
-                max_energy = auth_data["user"]["maxEnergy"]
-                coins_per_tap = auth_data["user"]["coinsPerTap"]
-                energy_per_sec = auth_data["user"]["energyPerSec"]
+                    sleep_time = int(maxEnergy / energyPerSec)
+                    print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN} [{session_name}] {Style.RESET_ALL} | Balance: {Fore.GREEN}{currentCoins}{Style.RESET_ALL} (Mined +{Fore.GREEN}{mined}{Style.RESET_ALL}) | Energy: {self.gen_energy_line(currentEnergy,maxEnergy,25,75)}")
+                    while True:
+                        # Sync the game data
+                        sync_data = await self.sync_gdata(session, currentEnergy, 0)
+                        if not sync_data:
+                            logger.error(f"Sync error for {session_name}")
+                            print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.RED} [{session_name}] {Style.RESET_ALL} | Sync error after tapping. Restart session...")
+                            break
 
-                sleep_time = int(max_energy / energy_per_sec)
-                while True:
-                    # Sync the game data
-                    sync_data = await self.sync_gdata(session, current_energy, 1)
-                    if not sync_data:
-                        logger.error(f"Sync error for {session_name}")
-                        return
+                        try:
+                            currentEnergy = int(sync_data["currentEnergy"])
+                        except:
+                            logger.error(f"Sync error after tapping for {session_name} restart session...")
+                            print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.RED} [{session_name}] {Style.RESET_ALL} | Sync error after tapping. Restart session...")
+                            break
 
-                    current_energy = sync_data["currentEnergy"]
-                    taps = round(current_energy / coins_per_tap)
-                    new_energy = max(0, current_energy - taps * coins_per_tap)
+                        taps = int(round(currentEnergy / coinsPerTap))
+                        new_energy = int(max(0, currentEnergy - taps * coinsPerTap))
 
-                    # Perform taps and update energy
-                    sync_data = await self.sync_gdata(session, new_energy, taps)
-                    if not sync_data:
-                        logger.error(f"Sync error after tapping for {session_name}")
-                        return
-                    gained_coins = taps * coins_per_tap
-                    print_s(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN} OK {Style.RESET_ALL} | [{session_name}] | Success qlyuk! | Energy: [{Fore.RED if current_energy<=max_energy/10 else Fore.GREEN if current_energy>=max_energy/0.75 else Fore.YELLOW }{current_energy}{Style.RESET_ALL}/{Fore.YELLOW}{max_energy}{Style.RESET_ALL}] | Balance: {Fore.GREEN}{sync_data['currentCoins']}{Style.RESET_ALL} (+{Fore.GREEN}{gained_coins}{Style.RESET_ALL}) | Sleep {Fore.CYAN}{sleep_time}{Style.RESET_ALL}")
-                    await asyncio.sleep(sleep_time)
+                        # Perform taps and update energy
+                        sync_data = await self.sync_gdata(session, new_energy, taps)
+                        if not sync_data:
+                            logger.error(f"Sync error after tapping for {session_name}")
+                            print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.RED} [{session_name}] {Style.RESET_ALL} | Sync error after tapping. Restart session...")
+                            break
+                        gained_coins = taps * coinsPerTap
+                        print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN} [{session_name}] {Style.RESET_ALL} | Success qlyuk! | Energy: {self.gen_energy_line(new_energy,maxEnergy,25,75)} | Balance: {Fore.GREEN}{sync_data['currentCoins']}{Style.RESET_ALL} (+{Fore.GREEN}{gained_coins}{Style.RESET_ALL}) | Sleep {Fore.CYAN}{sleep_time}{Style.RESET_ALL}")
+                        await asyncio.sleep(sleep_time)
 
-        except Exception as e:
-            logger.exception(f"Error during farming process for {session_name}: {e}")
+            except Exception as e:
+                logger.exception(f"Error during farming process for {session_name}: {e}")
+                break
+        return
