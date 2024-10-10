@@ -3,3 +3,4 @@ asyncio==3.4.3
 pyrogram==2.0.106
 loguru==0.7.1
 colorama==0.4.6
+TgCrypto==1.2.5
