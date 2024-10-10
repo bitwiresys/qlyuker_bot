@@ -2,10 +2,10 @@ import random
 import time
 import aiohttp
 import asyncio
-from utils import make_request, handle_error, insert_after, load_config
-from telegram_handler import TelegramHandler
+from bot.utils import make_request, handle_error, insert_after, load_config
+from bot.telegram_handler import TelegramHandler
 from loguru import logger
-from colorama import init, Fore, Style
+from colorama import Fore, Style
 
 # Load configurations from the .conf file
 config = load_config()
@@ -118,6 +118,7 @@ class FarmBot:
     async def farming(self):
         """Main farming loop."""
         session_name = self.client.name
+        random.seed(time.time())
         start_sleep = random.randint(3,12)
         print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW} [{session_name}] {Style.RESET_ALL} | Random sleep {start_sleep} second.")
         await asyncio.sleep(start_sleep)

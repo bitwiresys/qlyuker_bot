@@ -14,7 +14,7 @@ while true; do
     case $choice in
         1)
 			cls
-            python reg.py
+            python bot/reg.py
             read -n 1 -s -r -p "Press any key to continue..."
             ;;
         2)

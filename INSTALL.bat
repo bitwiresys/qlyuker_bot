@@ -39,7 +39,7 @@ set /p choice="Enter the action number (1 or 2): "
 
 if "%choice%"=="1" (
     cls
-    python reg.py
+    python bot/reg.py
     echo Registration completed.
 ) else if "%choice%"=="2" (
     cls

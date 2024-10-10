@@ -4,11 +4,11 @@ import asyncio
 import glob
 import threading
 import random
-from utils import load_config, load_version
+from bot.utils import load_config, load_version
 from colorama import init, Fore, Style
 from loguru import logger
 from pyrogram import Client
-from core import FarmBot
+from bot.core import FarmBot
 
 # Initialize colorama for colored console output
 init()

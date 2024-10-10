@@ -11,12 +11,12 @@ echo 3. Exit
 set /p choice=Enter the number (1-3): 
 
 if "%choice%"=="1" (
-	cls
-    python reg.py
+    cls
+    python bot/reg.py
     pause
     goto MENU
 ) else if "%choice%"=="2" (
-	cls
+    cls
     python main.py
     pause
     goto MENU
