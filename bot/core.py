@@ -21,7 +21,6 @@ USE_AUTO_UPGRADES = config.getboolean("bot", "use_auto_upgrades") if config.get(
 MAX_UPGRADE_LVL = config.getint("bot", "max_upgrade_lvl") if config.get("bot", "max_upgrade_lvl") != '' else 0
 MAX_UPGRADE_COST = config.getint("bot", "max_upgrade_cost") if config.get("bot", "max_upgrade_cost") != '' else 0
 MIN_UPGRADE_PROFIT = config.getint("bot", "min_upgrade_profit") if config.get("bot", "min_upgrade_profit") != '' else 0
-USE_DAILY_ENERGY = config.getboolean("bot", "use_daily_energy") if config.get("bot", "use_daily_energy") != '' else True
 
 class FarmBot:
     def __init__(self, client, platform):
@@ -30,7 +29,7 @@ class FarmBot:
         self.headers = self.gen_headers(self.platform)
 
     def gen_energy_line(self,current,max,min_percent,max_percent):
-        return f"[{Fore.RED if current<=max*min_percent/100 else Fore.GREEN if current>=max*max_percent/100 else Fore.YELLOW }{current}{Style.RESET_ALL}/{Fore.YELLOW}{max}{Style.RESET_ALL}]"
+        return f"[{Fore.RED if current<=max*min_percent/100 else Fore.GREEN if current>=max*max_percent/100 else Fore.YELLOW }{current}{Style.RESET_ALL}/{Fore.GREEN}{max}{Style.RESET_ALL}]"
     def gen_headers(self, platform):
         """Generates HTTP headers based on the platform."""
         ua = {
@@ -56,6 +55,42 @@ class FarmBot:
             headers = insert_after(headers, "User-Agent", "X-Requested-With", "org.telegram.messenger")
         return headers
 
+    async def sort_upgrades(self, upgrades, friendsCount):
+        g_upgraded = []  # List to store suitable upgrades
+
+        # Dictionary to store current upgrade levels by their id
+        current_levels = {upgrade['id']: upgrade['level'] for upgrade in upgrades}
+
+        for upgrade in upgrades:
+            # Check conditions for upgrades
+            if 'condition' in upgrade:
+                condition = upgrade['condition']
+
+                # Condition for friends
+                if condition['kind'] == 'friends':
+                    if friendsCount < condition['friends']:
+                        continue  # Do not add if not enough friends
+
+                # Condition for other upgrades
+                elif condition['kind'] == 'upgrade':
+                    required_upgrade_id = condition['upgradeId']
+                    required_level = condition['level']
+                    if required_upgrade_id in current_levels:
+                        if current_levels[required_upgrade_id] <= required_level:
+                            continue  # Do not add if level is insufficient
+                        if MAX_UPGRADE_LVL > 0 and MAX_UPGRADE_LVL <= required_level:
+                            continue  # Do not add if level exceeds maximum
+                        if MAX_UPGRADE_COST > 0 and MAX_UPGRADE_COST <= upgrade['next']['price']:
+                            continue  # Do not add if price exceeds maximum
+                        if MIN_UPGRADE_PROFIT > 0 and MIN_UPGRADE_PROFIT >= upgrade['next']['increment']:
+                            continue  # Do not add if profit is insufficient
+
+            # If conditions are met, add to the g_upgraded list
+            g_upgraded.append(upgrade)
+
+        # Sort the g_upgraded list by level
+        g_upgraded.sort(key=lambda x: x['level'])
+        return g_upgraded
     async def login(self, query_id, session):
         """Handles login to the service using Telegram web data."""
         try:
@@ -65,7 +100,9 @@ class FarmBot:
             if "user" not in data:
                 logger.error(f"Failed to find user data in the response: {data}")
                 return None
-
+            if not data:
+                logger.error(f"Authorization error for {self.client.name}")
+                return None
             return data
         except Exception as error:
             await handle_error(error, "", "getting Access Token")
@@ -76,8 +113,7 @@ class FarmBot:
         try:
             async with session.post(url, json=payload, headers=self.headers) as res:
                 if res.status != 200:
-                    logger.error(f"HTTP sync error: {res.status}. Response: {await res.text()}")
-                    return None
+                    return await res.text()
                 return await res.json()
         except Exception as e:
             logger.exception(f"Sync error: {e}")
@@ -86,11 +122,15 @@ class FarmBot:
     async def sync_gdata(self, session, current_energy, taps):
         """Synchronizes game data."""
         try:
-            return await self.sync(
+            gdata = await self.sync(
                 "https://qlyuker.io/api/game/sync",
                 {"clientTime": int(time.time()), "currentEnergy": current_energy, "taps": taps},
                 session,
             )
+            if not gdata:
+                logger.error(f"Sync error for {self.client.name}")
+                print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.RED} [{self.client.name}] {Style.RESET_ALL} | Sync error after tapping.")
+            return gdata
         except Exception as e:
             logger.exception(f"Error syncing game data: {e}")
             return None
@@ -98,7 +138,11 @@ class FarmBot:
     async def sync_claim_daily(self, session):
         """Claims daily rewards."""
         try:
-            return await self.sync("https://qlyuker.io/api/tasks/daily", {}, session)
+            daily = await self.sync("https://qlyuker.io/api/tasks/daily", {}, session)
+            if not daily:
+                logger.error(f"Sync error for {self.client.name}")
+                print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.RED} [{self.client.name}] {Style.RESET_ALL} | Sync error for claim daily.")
+            return daily
         except Exception as e:
             logger.exception(f"Error claiming daily rewards: {e}")
             return None
@@ -106,11 +150,12 @@ class FarmBot:
     async def sync_upgrade(self, session, upgrade_id):
         """Attempts to buy an upgrade."""
         try:
-            return await self.sync(
+            upgrade = await self.sync(
                 "https://qlyuker.io/api/upgrades/buy",
                 {"upgradeId": upgrade_id},
                 session,
             )
+            return upgrade
         except Exception as e:
             logger.exception(f"Error buying upgrade: {e}")
             return None
@@ -118,8 +163,7 @@ class FarmBot:
     async def farming(self):
         """Main farming loop."""
         session_name = self.client.name
-        random.seed(time.time())
-        start_sleep = random.randint(3,12)
+        start_sleep = random.choice(range(3,12))
         print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW} [{session_name}] {Style.RESET_ALL} | Random sleep {start_sleep} second.")
         await asyncio.sleep(start_sleep)
         while True:
@@ -129,11 +173,11 @@ class FarmBot:
                     tg_web_data, query_id = await tg_handler.get_tg_web_data()
 
                     auth_data = await self.login(query_id, session)
-                    if not auth_data:
-                        logger.error(f"Authorization error for {session_name}")
-                        break
+
                     mined = int(auth_data["mined"])
+                    upgrades = auth_data['upgrades']
                     dailyReward = auth_data['user']['dailyReward']
+                    friendsCount = auth_data['user']['friendsCount']
                     totalCoins = int(auth_data["user"]["totalCoins"])
                     currentCoins = int(auth_data["user"]["currentCoins"])
                     currentEnergy = int(auth_data["user"]["currentEnergy"])
@@ -142,36 +186,39 @@ class FarmBot:
                     maxEnergy = int(auth_data["user"]["maxEnergy"])
                     coinsPerTap = int(auth_data["user"]["coinsPerTap"])
                     energyPerSec = int(auth_data["user"]["energyPerSec"])
-
-                    sleep_time = int(maxEnergy / energyPerSec)
+                    g_upgrades = await self.sort_upgrades(upgrades,friendsCount)
                     print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN} [{session_name}] {Style.RESET_ALL} | Balance: {Fore.GREEN}{currentCoins}{Style.RESET_ALL} (Mined +{Fore.GREEN}{mined}{Style.RESET_ALL}) | Energy: {self.gen_energy_line(currentEnergy,maxEnergy,25,75)}")
-                    while True:
-                        # Sync the game data
-                        sync_data = await self.sync_gdata(session, currentEnergy, 0)
-                        if not sync_data:
-                            logger.error(f"Sync error for {session_name}")
-                            print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.RED} [{session_name}] {Style.RESET_ALL} | Sync error after tapping. Restart session...")
-                            break
 
-                        try:
-                            currentEnergy = int(sync_data["currentEnergy"])
-                        except:
-                            logger.error(f"Sync error after tapping for {session_name} restart session...")
-                            print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.RED} [{session_name}] {Style.RESET_ALL} | Sync error after tapping. Restart session...")
-                            break
+                    taps = int(round(currentEnergy / coinsPerTap))
+                    new_energy = int(max(0, currentEnergy - taps * coinsPerTap))
 
-                        taps = int(round(currentEnergy / coinsPerTap))
-                        new_energy = int(max(0, currentEnergy - taps * coinsPerTap))
+                    # Perform taps and update energy
+                    sync_data = await self.sync_gdata(session, new_energy, taps)
+                    gained_coins = taps * coinsPerTap
+                    sleep_time = int(maxEnergy / energyPerSec)
+                    currentCoins = sync_data['currentCoins']
+                    print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN} [{session_name}] {Style.RESET_ALL} | Successful qlyuk! | Energy: {self.gen_energy_line(new_energy, maxEnergy, 25, 75)} | Balance: {Fore.GREEN}{currentCoins}{Style.RESET_ALL} (+{Fore.GREEN}{gained_coins}{Style.RESET_ALL}) | Sleep {Fore.CYAN}{sleep_time}{Style.RESET_ALL}")
+                    if USE_AUTO_UPGRADES:
+                        await asyncio.sleep(random.randint(8, 34))
 
-                        # Perform taps and update energy
-                        sync_data = await self.sync_gdata(session, new_energy, taps)
-                        if not sync_data:
-                            logger.error(f"Sync error after tapping for {session_name}")
-                            print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.RED} [{session_name}] {Style.RESET_ALL} | Sync error after tapping. Restart session...")
-                            break
-                        gained_coins = taps * coinsPerTap
-                        print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN} [{session_name}] {Style.RESET_ALL} | Success qlyuk! | Energy: {self.gen_energy_line(new_energy,maxEnergy,25,75)} | Balance: {Fore.GREEN}{sync_data['currentCoins']}{Style.RESET_ALL} (+{Fore.GREEN}{gained_coins}{Style.RESET_ALL}) | Sleep {Fore.CYAN}{sleep_time}{Style.RESET_ALL}")
-                        await asyncio.sleep(sleep_time)
+                        for u in g_upgrades:
+                            if u['id'] == 'restoreEnergy':
+                                sleep_time = random.choice(range(1,3))
+                            if u['id'] == 'coinsPerTap' or 'maxLevel' in u:
+                                continue
+                            if 'next' in u:
+                                if u['next']['price'] > currentCoins and MIN_SAVE_BALANCE >= currentCoins - u['next']['price']:
+                                    continue
+                            r_updates = await self.sync_upgrade(session, u['id'])
+                            if r_updates == "Слишком рано для улучшения":
+                                continue
+                            currentCoins = r_updates['currentCoins']
+                            print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN} [{session_name}] {Style.RESET_ALL} | Successful update! | Mining: {Fore.GREEN}{minePerHour}{Style.RESET_ALL} (+{Fore.GREEN}{r_updates['minePerHour'] - minePerHour}{Style.RESET_ALL}) | Balance: {Fore.GREEN}{currentCoins}{Style.RESET_ALL}")
+                            minePerHour = r_updates['minePerHour']
+                            await asyncio.sleep(random.choice(range(1,3)))
+                    await session.close()
+                    await asyncio.sleep(sleep_time)
+                    continue
 
             except Exception as e:
                 logger.exception(f"Error during farming process for {session_name}: {e}")
