@@ -3,7 +3,7 @@ import configparser
 from pyrogram import Client
 
 # Define the name of the folder to store session files
-SESSION_FOLDER = "sessions"
+SESSION_FOLDER = "..\\sessions"
 
 # Create the session folder if it doesn't exist
 if not os.path.exists(SESSION_FOLDER):

@@ -203,7 +203,10 @@ class FarmBot:
 
                         for u in g_upgrades:
                             if u['id'] == 'restoreEnergy':
-                                sleep_time = random.choice(range(1,3))
+                                if time.time() - u['upgradedAt']>=3600:
+                                    sleep_time = random.choice(range(1,3))
+                                else:
+                                    continue
                             if u['id'] == 'coinsPerTap' or 'maxLevel' in u:
                                 continue
                             if 'next' in u:
