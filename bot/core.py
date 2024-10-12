@@ -62,6 +62,9 @@ class FarmBot:
         current_levels = {upgrade['id']: upgrade['level'] for upgrade in upgrades}
 
         for upgrade in upgrades:
+            # Check max level in upgrade
+            if 'maxLevel' in upgrade:
+                continue
             # Check conditions for upgrades
             if 'condition' in upgrade:
                 condition = upgrade['condition']
@@ -89,7 +92,7 @@ class FarmBot:
             g_upgraded.append(upgrade)
 
         # Sort the g_upgraded list by level
-        g_upgraded.sort(key=lambda x: x['level'])
+        g_upgraded.sort(key=lambda x: x['next']['price'])
         return g_upgraded
     async def login(self, query_id, session):
         """Handles login to the service using Telegram web data."""
@@ -202,14 +205,13 @@ class FarmBot:
                         await asyncio.sleep(random.randint(8, 34))
 
                         for u in g_upgrades:
+                            if u['id'] == 'coinsPerTap':
+                                continue
                             if u['id'] == 'restoreEnergy':
-
-                                if 'upgradedAt' not in u or time.time() - u['upgradedAt']>=3600:
-                                    sleep_time = random.choice(range(1,3))
+                                if 'upgradedAt' not in u or time.time() - u['upgradedAt'] >= 3600:
+                                    sleep_time = random.choice(range(1, 3))
                                 else:
                                     continue
-                            if u['id'] == 'coinsPerTap' or 'maxLevel' in u:
-                                continue
                             if 'next' in u:
                                 if u['next']['price'] > currentCoins and MIN_SAVE_BALANCE >= currentCoins - u['next']['price']:
                                     continue
