@@ -203,7 +203,8 @@ class FarmBot:
 
                         for u in g_upgrades:
                             if u['id'] == 'restoreEnergy':
-                                if time.time() - u['upgradedAt']>=3600:
+
+                                if 'upgradedAt' not in u or time.time() - u['upgradedAt']>=3600:
                                     sleep_time = random.choice(range(1,3))
                                 else:
                                     continue
