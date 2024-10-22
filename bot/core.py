@@ -2,7 +2,7 @@ import random
 import time
 import aiohttp
 import asyncio
-from bot.utils import make_request, handle_error, insert_after, load_config
+from bot.utils import make_request, handle_error, insert_after, load_config, is_json
 from bot.telegram_handler import TelegramHandler
 from loguru import logger
 from colorama import Fore, Style
@@ -71,7 +71,7 @@ class FarmBot:
 
                 # Condition for friends
                 if condition['kind'] == 'friends':
-                    if friendsCount < condition['friends']:
+                    if friendsCount <= condition['friends']:
                         continue  # Do not add if not enough friends
 
                 # Condition for other upgrades
@@ -81,11 +81,11 @@ class FarmBot:
                     if required_upgrade_id in current_levels:
                         if current_levels[required_upgrade_id] <= required_level:
                             continue  # Do not add if level is insufficient
-                        if MAX_UPGRADE_LVL > 0 and MAX_UPGRADE_LVL <= required_level:
+                        if MAX_UPGRADE_LVL >= 0 and MAX_UPGRADE_LVL <= required_level:
                             continue  # Do not add if level exceeds maximum
-                        if MAX_UPGRADE_COST > 0 and MAX_UPGRADE_COST <= upgrade['next']['price']:
+                        if MAX_UPGRADE_COST >= 0 and MAX_UPGRADE_COST <= upgrade['next']['price']:
                             continue  # Do not add if price exceeds maximum
-                        if MIN_UPGRADE_PROFIT > 0 and MIN_UPGRADE_PROFIT >= upgrade['next']['increment']:
+                        if MIN_UPGRADE_PROFIT >= 0 and MIN_UPGRADE_PROFIT >= upgrade['next']['increment']:
                             continue  # Do not add if profit is insufficient
 
             # If conditions are met, add to the g_upgraded list
@@ -115,9 +115,9 @@ class FarmBot:
         """Sends a sync request to the specified URL."""
         try:
             async with session.post(url, json=payload, headers=self.headers) as res:
-                if res.status != 200:
-                    return await res.text()
-                return await res.json()
+                if is_json(await res.text()):
+                    return await res.json()
+                return await res.text()
         except Exception as e:
             logger.exception(f"Sync error: {e}")
             return None
@@ -133,6 +133,7 @@ class FarmBot:
             if not gdata:
                 logger.error(f"Sync error for {self.client.name}")
                 print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.RED} [{self.client.name}] {Style.RESET_ALL} | Sync error after tapping.")
+                return None
             return gdata
         except Exception as e:
             logger.exception(f"Error syncing game data: {e}")
@@ -145,6 +146,7 @@ class FarmBot:
             if not daily:
                 logger.error(f"Sync error for {self.client.name}")
                 print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.RED} [{self.client.name}] {Style.RESET_ALL} | Sync error for claim daily.")
+                return None
             return daily
         except Exception as e:
             logger.exception(f"Error claiming daily rewards: {e}")
@@ -158,6 +160,11 @@ class FarmBot:
                 {"upgradeId": upgrade_id},
                 session,
             )
+            if not upgrade:
+                logger.error(f"Sync error for {self.client.name}")
+                print(
+                    f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.RED} [{self.client.name}] {Style.RESET_ALL} | Sync error for upgrade.")
+                return None
             return upgrade
         except Exception as e:
             logger.exception(f"Error buying upgrade: {e}")
@@ -176,7 +183,8 @@ class FarmBot:
                     tg_web_data, query_id = await tg_handler.get_tg_web_data()
 
                     auth_data = await self.login(query_id, session)
-
+                    if auth_data == None:
+                        continue
                     mined = int(auth_data["mined"])
                     upgrades = auth_data['upgrades']
                     dailyReward = auth_data['user']['dailyReward']
@@ -197,6 +205,8 @@ class FarmBot:
 
                     # Perform taps and update energy
                     sync_data = await self.sync_gdata(session, new_energy, taps)
+                    if sync_data == None:
+                        continue
                     gained_coins = taps * coinsPerTap
                     sleep_time = int(maxEnergy / energyPerSec)
                     currentCoins = sync_data['currentCoins']
@@ -216,6 +226,8 @@ class FarmBot:
                                 if u['next']['price'] > currentCoins and MIN_SAVE_BALANCE >= currentCoins - u['next']['price']:
                                     continue
                             r_updates = await self.sync_upgrade(session, u['id'])
+                            if r_updates == None:
+                                continue
                             if r_updates == "Слишком рано для улучшения":
                                 continue
                             currentCoins = r_updates['currentCoins']

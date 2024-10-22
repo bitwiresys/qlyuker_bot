@@ -29,6 +29,7 @@ LOG_RETENTION = config.get("settings", "log_retention")
 LOG_LEVEL = config.get("settings", "log_level")
 
 # Configure the logger
+logger.remove()
 logger.add(LOG_FILE, rotation=LOG_ROTATION, retention=LOG_RETENTION, level=LOG_LEVEL)
 
 # Banner to display at the start

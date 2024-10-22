@@ -1,6 +1,7 @@
 import asyncio
 import aiohttp
 import configparser
+import json
 from loguru import logger
 
 def load_config(config_file=".conf"):
@@ -26,7 +27,13 @@ async def handle_error(error: Exception, response_text: str, context: str):
     """Handles errors during requests."""
     logger.error(f"Unknown error while {context}: <lr>{error}</lr> | Response text: {response_text}...")
     await asyncio.sleep(3)
-
+def is_json(myjson):
+    """Verify if a String is JSON."""
+    try:
+        json.loads(myjson)
+    except ValueError as e:
+        return False
+    return True
 async def make_request(http_client: aiohttp.ClientSession, method: str, url: str, json_data: dict, error_context: str, headers: dict = None):
     """Makes an HTTP request and handles errors."""
     response_text = ""
