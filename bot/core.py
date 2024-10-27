@@ -62,16 +62,17 @@ class FarmBot:
         current_levels = {upgrade['id']: upgrade['level'] for upgrade in upgrades}
 
         for upgrade in upgrades:
-            # Check max level in upgrade
+            # Skip upgrades that have reached max level (indicated by the presence of 'maxLevel')
             if 'maxLevel' in upgrade:
                 continue
+
             # Check conditions for upgrades
             if 'condition' in upgrade:
                 condition = upgrade['condition']
 
                 # Condition for friends
                 if condition['kind'] == 'friends':
-                    if friendsCount <= condition['friends']:
+                    if friendsCount < condition['friends']:
                         continue  # Do not add if not enough friends
 
                 # Condition for other upgrades
@@ -79,20 +80,30 @@ class FarmBot:
                     required_upgrade_id = condition['upgradeId']
                     required_level = condition['level']
                     if required_upgrade_id in current_levels:
-                        if current_levels[required_upgrade_id] <= required_level:
-                            continue  # Do not add if level is insufficient
-                        if MAX_UPGRADE_LVL >= 0 and MAX_UPGRADE_LVL <= required_level:
-                            continue  # Do not add if level exceeds maximum
-                        if MAX_UPGRADE_COST >= 0 and MAX_UPGRADE_COST <= upgrade['next']['price']:
-                            continue  # Do not add if price exceeds maximum
-                        if MIN_UPGRADE_PROFIT >= 0 and MIN_UPGRADE_PROFIT >= upgrade['next']['increment']:
-                            continue  # Do not add if profit is insufficient
+                        if current_levels[required_upgrade_id] < required_level:
+                            continue  # Do not add if required upgrade level is insufficient
 
-            # If conditions are met, add to the g_upgraded list
+            # Check the level of the upgrade only if MAX_UPGRADE_LVL > 0
+            if MAX_UPGRADE_LVL > 0 and upgrade['level'] >= MAX_UPGRADE_LVL:
+                continue  # Do not add if level exceeds the maximum allowed
+
+            # Check next upgrade price only if MAX_UPGRADE_COST > 0
+            if 'next' in upgrade:
+                next_price = upgrade['next'].get('price', float('inf'))
+                next_increment = upgrade['next'].get('increment', 0)
+
+                if MAX_UPGRADE_COST > 0 and next_price > MAX_UPGRADE_COST:
+                    continue  # Do not add if next upgrade price exceeds the maximum allowed
+
+                # Check profit increment only if MIN_UPGRADE_PROFIT > 0
+                if MIN_UPGRADE_PROFIT > 0 and next_increment < MIN_UPGRADE_PROFIT:
+                    continue  # Do not add if profit increment is below the minimum allowed
+
+            # If all conditions are met, add to the g_upgraded list
             g_upgraded.append(upgrade)
 
-        # Sort the g_upgraded list by level
-        g_upgraded.sort(key=lambda x: x['next']['price'])
+        # Sort the g_upgraded list by the ratio of profit increment to price (efficiency)
+        g_upgraded.sort(key=lambda x: (x['next']['increment'] / x['next']['price']), reverse=True)
         return g_upgraded
     async def login(self, query_id, session):
         """Handles login to the service using Telegram web data."""
