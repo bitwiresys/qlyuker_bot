@@ -103,7 +103,7 @@ class FarmBot:
             g_upgraded.append(upgrade)
 
         # Sort the g_upgraded list by the ratio of profit increment to price (efficiency)
-        g_upgraded.sort(key=lambda x: (x['next']['increment'] / x['next']['price']), reverse=True)
+        g_upgraded.sort(key=lambda x: (x['next']['increment'] / x['next']['price']) if x['next']['price'] > 0 else 0,reverse=True)
         return g_upgraded
     async def login(self, query_id, session):
         """Handles login to the service using Telegram web data."""
@@ -184,8 +184,8 @@ class FarmBot:
     async def farming(self):
         """Main farming loop."""
         session_name = self.client.name
-        start_sleep = random.choice(range(3,12))
-        print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW} [{session_name}] {Style.RESET_ALL} | Random sleep {start_sleep} second.")
+        start_sleep = random.choice(range(12,120))
+        print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Random sleep {start_sleep} second.")
         await asyncio.sleep(start_sleep)
         while True:
             try:
@@ -209,8 +209,10 @@ class FarmBot:
                     coinsPerTap = int(auth_data["user"]["coinsPerTap"])
                     energyPerSec = int(auth_data["user"]["energyPerSec"])
                     g_upgrades = await self.sort_upgrades(upgrades,friendsCount)
-                    print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN} [{session_name}] {Style.RESET_ALL} | Balance: {Fore.GREEN}{currentCoins}{Style.RESET_ALL} (Mined +{Fore.GREEN}{mined}{Style.RESET_ALL}) | Energy: {self.gen_energy_line(currentEnergy,maxEnergy,25,75)}")
-
+                    print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN}[{session_name}]{Style.RESET_ALL} | Balance: {Fore.GREEN}{currentCoins}{Style.RESET_ALL} (Mined +{Fore.GREEN}{mined}{Style.RESET_ALL}) | Energy: {self.gen_energy_line(currentEnergy,maxEnergy,25,75)}")
+                    if not dailyReward["claimed"]:
+                        claim_daily = await self.sync_claim_daily(session)
+                        print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN}[{session_name}]{Style.RESET_ALL} | Claim daily reward! | Day: {claim_daily['dailyReward']['day']} | Reward: +{Fore.GREEN}{claim_daily['reward']}{Style.RESET_ALL}")
                     taps = int(round(currentEnergy / coinsPerTap))
                     new_energy = int(max(0, currentEnergy - taps * coinsPerTap))
 
@@ -221,7 +223,7 @@ class FarmBot:
                     gained_coins = taps * coinsPerTap
                     sleep_time = int(maxEnergy / energyPerSec)
                     currentCoins = sync_data['currentCoins']
-                    print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN} [{session_name}] {Style.RESET_ALL} | Successful qlyuk! | Energy: {self.gen_energy_line(new_energy, maxEnergy, 25, 75)} | Balance: {Fore.GREEN}{currentCoins}{Style.RESET_ALL} (+{Fore.GREEN}{gained_coins}{Style.RESET_ALL}) | Sleep {Fore.CYAN}{sleep_time}{Style.RESET_ALL}")
+                    print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN}[{session_name}]{Style.RESET_ALL} | Successful qlyuk! | Energy: {self.gen_energy_line(new_energy, maxEnergy, 25, 75)} | Balance: {Fore.GREEN}{currentCoins}{Style.RESET_ALL} (+{Fore.GREEN}{gained_coins}{Style.RESET_ALL}) | Sleep {Fore.CYAN}{sleep_time}{Style.RESET_ALL}")
                     if USE_AUTO_UPGRADES:
                         await asyncio.sleep(random.randint(8, 34))
 
@@ -242,7 +244,7 @@ class FarmBot:
                             if r_updates == "Слишком рано для улучшения":
                                 continue
                             currentCoins = r_updates['currentCoins']
-                            print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN} [{session_name}] {Style.RESET_ALL} | Successful update! | Mining: {Fore.GREEN}{minePerHour}{Style.RESET_ALL} (+{Fore.GREEN}{r_updates['minePerHour'] - minePerHour}{Style.RESET_ALL}) | Balance: {Fore.GREEN}{currentCoins}{Style.RESET_ALL}")
+                            print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN}[{session_name}]{Style.RESET_ALL} | Successful update! | Mining: {Fore.GREEN}{minePerHour}{Style.RESET_ALL} (+{Fore.GREEN}{r_updates['minePerHour'] - minePerHour}{Style.RESET_ALL}) | Balance: {Fore.GREEN}{currentCoins}{Style.RESET_ALL}")
                             minePerHour = r_updates['minePerHour']
                             await asyncio.sleep(random.choice(range(1,3)))
                     await session.close()
