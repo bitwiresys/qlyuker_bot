@@ -74,7 +74,7 @@ Ensure you have the following installed:
 
 1. Go to [my.telegram.org](https://my.telegram.org) and log in with your phone number.
 2. Select **API development tools** and fill out the registration form for a new application.
-3. Record the **API_ID** and **API_HASH** in the `.env` file provided after registering your application.
+3. Record the API_ID and API_HASH in the .conf file provided after registering your application.
 
 ---
 
