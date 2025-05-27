@@ -64,10 +64,11 @@ class FarmBot:
 
         return headers
 
-    async def sort_upgrades(self, upgrades, friendsCount):
+    async def sort_upgrades(self, upgrades, friendsCount, shared_config):
         print(
             f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{self.client.name}]{Style.RESET_ALL} | Starting sort_upgrades with {len(upgrades.get('list', []))} upgrades and {friendsCount} friends")
         g_upgraded = []  # List to store suitable upgrades
+        current_time = int(time.time())
 
         # Extract upgrade list from the upgrades object
         upgrade_list = upgrades.get('list', [])
@@ -84,7 +85,37 @@ class FarmBot:
             if 'level' in upgrade_data:
                 current_levels[upgrade_id] = upgrade_data['level']
 
+        # Получаем настройки задержек из shared_config
+        day_limitation_delay = shared_config.get('dayLimitationUpgradeDelay', 3600)  # По умолчанию 1 час
+        upgrade_delays = shared_config.get('upgradeDelay', {})
+
         for upgrade in upgrade_list:
+            # Проверка кулдауна на основе upgradedAt
+            if 'upgradedAt' in upgrade:
+                last_upgrade_time = upgrade['upgradedAt']
+
+                # Определяем задержку для конкретного апгрейда
+                cooldown_period = day_limitation_delay  # По умолчанию
+
+                # Проверяем есть ли дневное ограничение
+                if 'dayLimitation' in upgrade and upgrade['dayLimitation'] > 0:
+                    cooldown_period = day_limitation_delay
+                else:
+                    # Используем задержку в зависимости от уровня апгрейда
+                    upgrade_level = str(upgrade.get('level', 1))
+                    if upgrade_level in upgrade_delays:
+                        cooldown_period = upgrade_delays[upgrade_level]
+                    elif upgrade['id'] == 'restoreEnergy':
+                        cooldown_period = 3600  # 1 час для восстановления энергии
+
+                # Проверяем прошло ли достаточно времени
+                time_since_upgrade = current_time - last_upgrade_time
+                if time_since_upgrade < cooldown_period:
+                    remaining_minutes = int((cooldown_period - time_since_upgrade) / 60)
+                    print(
+                        f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{self.client.name}]{Style.RESET_ALL} | Upgrade {upgrade['id']} on cooldown. {remaining_minutes} minutes remaining.")
+                    continue
+
             # Skip upgrades that have reached max level (indicated by the presence of 'maxLevel')
             if 'maxLevel' in upgrade:
                 continue
@@ -250,7 +281,54 @@ class FarmBot:
     #     except Exception as e:
     #         logger.exception(f"Error claiming daily rewards: {e}")
     #         return None
+    async def process_tasks(self, session, tasks):
+        """Automatically complete available tasks."""
+        print(
+            f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{self.client.name}]{Style.RESET_ALL} | Processing {len(tasks)} tasks")
 
+        for task in tasks:
+            if task.get('completed', False):
+                continue
+
+            task_id = task['id']
+            task_kind = task['kind']
+            reward = task.get('meta', {}).get('reward', 0)
+
+            print(
+                f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{self.client.name}]{Style.RESET_ALL} | Processing task: {task_id} ({task_kind}) - Reward: {reward}")
+
+            # Проверяем задания с проверкой времени
+            if 'time' in task and 'checkDelay' in task.get('meta', {}):
+                current_time = int(time.time())
+                check_delay = task['meta']['checkDelay']
+                time_since_action = current_time - task['time']
+
+                if time_since_action >= check_delay:
+                    # Можно проверить выполнение задания
+                    result = await self.sync(
+                        "https://api.qlyuker.io/tasks/check",
+                        {"taskId": task_id},
+                        session
+                    )
+                    if result:
+                        print(
+                            f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN}[{self.client.name}]{Style.RESET_ALL} | Task {task_id} completed! Reward: +{reward}")
+
+            await asyncio.sleep(random.randint(2, 5))
+
+    async def claim_task_reward(self, session, task_id):
+        """Claim reward for completed task."""
+        try:
+            result = await self.sync(
+                "https://api.qlyuker.io/tasks/claim",
+                {"taskId": task_id},
+                session
+            )
+            return result
+        except Exception as e:
+            print(
+                f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.RED}[{self.client.name}]{Style.RESET_ALL} | Error claiming task reward: {e}")
+            return None
     async def sync_upgrade(self, session, upgrade_id):
         """Attempts to buy an upgrade."""
         try:
@@ -286,13 +364,14 @@ class FarmBot:
                 f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.RED}[{self.client.name}]{Style.RESET_ALL} | Error buying upgrade: {str(e)}")
             return None
 
+
     async def farming(self):
-        """Main farming loop."""
+        """Main farming loop with enhanced functionality."""
         session_name = self.client.name
         start_sleep = random.choice(range(12, 120))
-        # print(
-        #     f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Starting farming with random sleep {start_sleep} seconds")
-        # await asyncio.sleep(start_sleep)
+        print(
+            f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Starting enhanced farming with random sleep {start_sleep} seconds")
+        await asyncio.sleep(start_sleep)
 
         while True:
             try:
@@ -304,8 +383,6 @@ class FarmBot:
                     print(
                         f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Getting Telegram web data")
                     _, query_id = await tg_handler.get_tg_web_data()
-                    print(
-                        f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Got query_id: {query_id[:15]}...")
 
                     print(
                         f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Attempting login")
@@ -313,7 +390,7 @@ class FarmBot:
                     if auth_data is None:
                         print(
                             f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.RED}[{session_name}]{Style.RESET_ALL} | Login failed, retrying next cycle")
-                        await asyncio.sleep(60)  # Wait before retry
+                        await asyncio.sleep(60)
                         continue
 
                     # Extract data from the new API structure
@@ -321,37 +398,47 @@ class FarmBot:
                         f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Extracting data from API response")
                     mined = int(auth_data["app"]["mined"])
                     upgrades = auth_data['upgrades']
-                    friendsCount = auth_data['friends']['friendsCount']
+                    shared_config = auth_data.get('sharedConfig', {})
+                    friendsCount = auth_data['friends'].get('friendsCountWithYandexID', 0)
                     totalCoins = int(auth_data["game"]["totalCoins"])
                     currentCoins = int(auth_data["game"]["currentCoins"])
                     currentEnergy = int(auth_data["game"]["currentEnergy"])
+                    currentTickets = int(auth_data["game"]["currentTickets"])
                     minePerHour = int(auth_data["game"]["minePerHour"])
                     uid = auth_data["user"]['uid']
                     maxEnergy = int(auth_data["game"]["maxEnergy"])
                     coinsPerTap = int(auth_data["game"]["coinsPerTap"])
                     energyPerSec = int(auth_data["game"]["energyPerSec"])
 
-                    print(
-                        f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN}[{session_name}]{Style.RESET_ALL} | User stats - Balance: {currentCoins}, Energy: {currentEnergy}/{maxEnergy}, Mining: {minePerHour}/h")
+                    # New data sections
+                    tasks = auth_data.get('tasks', [])
+                    shop_items = auth_data.get('shop', [])
+                    tournaments = auth_data.get('tournaments', [])
+                    team_info = auth_data.get('team', {})
+                    leaderboard = auth_data.get('leaderboard', [])
+
+                    print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN}[{session_name}]{Style.RESET_ALL} | "
+                          f"Balance: {Fore.GREEN}{currentCoins}{Style.RESET_ALL} "
+                          f"(Mined +{Fore.GREEN}{mined}{Style.RESET_ALL}) | "
+                          f"Energy: {self.gen_energy_line(currentEnergy, maxEnergy, 25, 75)} | "
+                          f"Tickets: {Fore.YELLOW}{currentTickets}{Style.RESET_ALL}")
+
+                    # Process tasks automatically
+                    if tasks:
+                        print(
+                            f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Processing {len(tasks)} available tasks")
+                        await self.process_tasks(session, tasks)
 
                     # Sort upgrades for auto-upgrading
                     print(
                         f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Sorting upgrades")
-                    g_upgrades = await self.sort_upgrades(upgrades, friendsCount)
-
-                    print(
-                        f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN}[{session_name}]{Style.RESET_ALL} | "
-                        f"Balance: {Fore.GREEN}{currentCoins}{Style.RESET_ALL} "
-                        f"(Mined +{Fore.GREEN}{mined}{Style.RESET_ALL}) | "
-                        f"Energy: {self.gen_energy_line(currentEnergy, maxEnergy, 25, 75)}")
+                    g_upgrades = await self.sort_upgrades(upgrades, friendsCount, shared_config)
 
                     # Calculate taps based on energy and coins per tap
                     print(
                         f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Checking if tapping is needed (energy: {currentEnergy}, min save: {MIN_SAVE_ENERGY})")
                     if currentEnergy > MIN_SAVE_ENERGY:
                         tap_count = TAP_COUNT
-                        print(
-                            f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Initial tap count from config: {tap_count}")
 
                         # Если включена опция максимального использования энергии
                         if USE_MAX_ENERGY_TAPS:
@@ -369,7 +456,7 @@ class FarmBot:
                                 print(
                                     f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.RED}[{session_name}]{Style.RESET_ALL} | Error parsing random_tap_count: {e}")
                                 print(
-                                    f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.RED}[{session_name}]{Style.RESET_ALL} | Using default tap count: {tap_count}")
+                                    f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Using default tap count: {tap_count}")
 
                         print(
                             f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Final tap count: {tap_count}")
@@ -381,7 +468,7 @@ class FarmBot:
                             print(
                                 f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Will perform {taps} taps, energy will drop from {currentEnergy} to {new_energy}")
 
-                            # Всегда используем массовые тапы, независимо от настроек SLEEP_PER_TAP и RANDOM_SLEEP_PER_TAP
+                            # Всегда используем массовые тапы для максимальной эффективности
                             print(
                                 f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Using bulk taps (count: {taps})")
                             sync_data = await self.sync_gdata(session, new_energy, taps)
@@ -406,7 +493,7 @@ class FarmBot:
                     # Handle auto-upgrades if enabled
                     if USE_AUTO_UPGRADES:
                         print(
-                            f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Auto-upgrades enabled, processing")
+                            f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Auto-upgrades enabled, processing {len(g_upgrades)} available upgrades")
                         upgrade_delay = random.randint(8, 34)
                         print(
                             f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | Waiting {upgrade_delay} seconds before upgrades")
@@ -423,7 +510,6 @@ class FarmBot:
                                 if 'upgradedAt' not in u or time.time() - u['upgradedAt'] >= 3600:
                                     print(
                                         f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.YELLOW}[{session_name}]{Style.RESET_ALL} | restoreEnergy upgrade available (last upgrade > 1 hour)")
-                                    # Only proceed with restoreEnergy if it's been more than an hour since last upgrade
                                     pass
                                 else:
                                     print(
@@ -464,7 +550,6 @@ class FarmBot:
                             try:
                                 currentCoins = r_updates['currentCoins']
                                 upgrade_mine_diff = r_updates['minePerHour'] - minePerHour
-
                                 print(
                                     f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN}[{session_name}]{Style.RESET_ALL} | "
                                     f"Successful update! | Mining: {Fore.GREEN}{minePerHour}{Style.RESET_ALL} "
@@ -475,7 +560,6 @@ class FarmBot:
                                 minePerHour = r_updates['minePerHour']
                                 maxEnergy = r_updates['maxEnergy']
                                 currentEnergy = r_updates['currentEnergy']
-
                                 upgrade_count += 1
                             except KeyError as e:
                                 print(
@@ -493,10 +577,8 @@ class FarmBot:
 
                     # Calculate sleep time before next loop
                     sleep_time = min(10800, int(maxEnergy / energyPerSec) if energyPerSec > 0 else 10800)  # 3 hours max
-
-                    print(
-                        f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN}[{session_name}]{Style.RESET_ALL} | "
-                        f"Sleep {Fore.CYAN}{sleep_time}{Style.RESET_ALL} seconds")
+                    print(f" → [{time.strftime('%Y-%m-%d %H:%M:%S')}] | {Fore.GREEN}[{session_name}]{Style.RESET_ALL} | "
+                          f"Sleep {Fore.CYAN}{sleep_time}{Style.RESET_ALL} seconds")
 
                     # Sleep before next cycle
                     await asyncio.sleep(sleep_time)
